@@ -23,7 +23,7 @@ function errorHandler(error, req, res, _next) {
     console.warn('[auth] Sign-in failed', {
       timestamp: new Date().toISOString(),
       status,
-      reason: status >= 500 ? error.message : message,
+      reason: status >= 500 ? 'Unexpected server error' : message,
       error: error.name,
       origin: req.headers.origin || 'none'
     });

@@ -13,6 +13,12 @@ function loadEnv() {
   if (!['lax', 'strict', 'none'].includes(cookieSameSite)) {
     throw new Error('COOKIE_SAME_SITE must be lax, strict, or none');
   }
+  const cloudinaryKeys = ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'];
+  const configuredCloudinaryKeys = cloudinaryKeys.filter((key) => process.env[key]);
+  if (configuredCloudinaryKeys.length && configuredCloudinaryKeys.length !== cloudinaryKeys.length) {
+    const missingCloudinaryKeys = cloudinaryKeys.filter((key) => !process.env[key]);
+    throw new Error(`Set all Cloudinary variables or leave them unset: ${missingCloudinaryKeys.join(', ')}`);
+  }
 
   return {
     nodeEnv,
@@ -27,7 +33,12 @@ function loadEnv() {
       .map((origin) => origin.trim())
       .filter(Boolean),
     rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-    rateLimitMax: Number(process.env.RATE_LIMIT_MAX) || 100
+    rateLimitMax: Number(process.env.RATE_LIMIT_MAX) || 300,
+    cloudinary: configuredCloudinaryKeys.length ? {
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+      apiKey: process.env.CLOUDINARY_API_KEY,
+      apiSecret: process.env.CLOUDINARY_API_SECRET
+    } : null
   };
 }
 

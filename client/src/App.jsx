@@ -5,7 +5,7 @@ import {
   ChevronDown, CircleDot, Clock3, Eye, EyeOff, Flag, Goal, LayoutDashboard,
   LogOut, Menu, Search, ShieldCheck, Trophy, Users, X,
 } from 'lucide-react';
-import { api, fetchList, fetchOne, getPayload, send } from './api';
+import { api, fetchList, fetchOne, getPayload, send, uploadImage } from './api';
 
 const navigation = [
   ['Overview', '/'],
@@ -341,7 +341,7 @@ function StatsPage({ data, loading }) {
         <StatTile icon={<Users size={19} />} label="TEAMS" value={data.teams.length} />
       </div>
       <div className="stats-content">
-        <section className="stat-leaders"><div className="panel-top"><span><Goal size={15} /> GOLDEN BOOT RACE</span><span>TOP SCORERS</span></div>{scoring.length ? scoring.slice(0, 8).map((scorer, index) => <div className="leader-row" key={recordId(scorer.player) || index}><span className="leader-rank">{String(index + 1).padStart(2, '0')}</span><span className="leader-name"><b>{scorer.player?.name || scorer.name}</b><small>{nameOfTeam(scorer.team || scorer.player?.team)}</small></span><b className="leader-score">{scorer.goals ?? scorer.totalGoals ?? 0}<small> G</small></b></div>) : <Empty title="No goals on the board yet" text="Scorer rankings will appear when published match events are recorded." />}</section>
+        <section className="stat-leaders"><div className="panel-top"><span><Goal size={15} /> GOLDEN BOOT RACE</span><span>TOP SCORERS</span></div>{scoring.length ? scoring.slice(0, 8).map((scorer, index) => <div className="leader-row" key={recordId(scorer.player) || index}><span className="leader-rank">{String(index + 1).padStart(2, '0')}</span><span className="leader-name"><b>{scorer.player?.name || scorer.name}</b><small>{nameOfTeam(scorer.team || scorer.player?.team)}</small></span><b className="leader-score">{scorer.goals ?? scorer.totalGoals ?? 0}<small> G</small></b></div>) : <Empty title="Player goal totals aren't tracked yet" text="This app currently calculates team and match statistics, but doesn't record individual goal scorers." />}</section>
         <section className="stat-feature"><span className="eyebrow">THE NUMBERS GAME</span><h2>Every goal<br />has a story.</h2><p>All tournament statistics are calculated from published match results and player data.</p><div className="stat-feature-bottom"><span>OFFICIAL TOURNAMENT DATA</span><BarChart3 size={24} /></div></section>
       </div>
     </>}</main>;
@@ -387,8 +387,8 @@ const resourceForms = {
       { key: 'name', label: 'Tournament name', required: true },
       { key: 'edition', label: 'Edition' },
       { key: 'description', label: 'Description', type: 'textarea' },
-      { key: 'logoUrl', label: 'Logo image URL', type: 'url' },
-      { key: 'bannerUrl', label: 'Banner image URL', type: 'url' },
+      { key: 'logoUrl', label: 'Tournament logo', type: 'image' },
+      { key: 'bannerUrl', label: 'Tournament banner', type: 'image' },
       { key: 'venue', label: 'Venue' },
       { key: 'startDate', label: 'Start date', type: 'date' },
       { key: 'endDate', label: 'End date', type: 'date' },
@@ -401,7 +401,7 @@ const resourceForms = {
     fields: [
       { key: 'name', label: 'Team name', required: true },
       { key: 'shortName', label: 'Short name' },
-      { key: 'logoUrl', label: 'Logo image URL', type: 'url' },
+      { key: 'logoUrl', label: 'Team logo', type: 'image' },
       { key: 'coach', label: 'Coach' },
       { key: 'description', label: 'Description', type: 'textarea' },
       { key: 'groupName', label: 'Group' },
@@ -415,7 +415,7 @@ const resourceForms = {
       { key: 'name', label: 'Player name', required: true },
       { key: 'jerseyNumber', label: 'Jersey number', type: 'number', min: 0, max: 99 },
       { key: 'position', label: 'Position' },
-      { key: 'photoUrl', label: 'Photo image URL', type: 'url' },
+      { key: 'photoUrl', label: 'Player photo', type: 'image' },
       { key: 'team', label: 'Team', type: 'relation', source: 'teams', required: true },
       { key: 'active', label: 'Active player', type: 'checkbox' },
     ],
@@ -436,7 +436,7 @@ const resourceForms = {
     title: 'Sponsors',
     fields: [
       { key: 'name', label: 'Sponsor name', required: true },
-      { key: 'logoUrl', label: 'Logo image URL', type: 'url' },
+      { key: 'logoUrl', label: 'Sponsor logo', type: 'image' },
       { key: 'websiteUrl', label: 'Website URL', type: 'url' },
       { key: 'tier', label: 'Sponsor category' },
       { key: 'description', label: 'Description', type: 'textarea' },
@@ -451,7 +451,7 @@ const resourceForms = {
       { key: 'email', label: 'Email address', type: 'email', required: true },
       { key: 'role', label: 'Role', type: 'select', options: ['Super Admin', 'Admin', 'Editor'], required: true },
       { key: 'active', label: 'Active account', type: 'checkbox' },
-      { key: 'password', label: 'Initial password (at least 12 characters)', type: 'password', required: true, createOnly: true },
+      { key: 'password', label: 'Password (at least 12 characters)', type: 'password', required: true, keepEmptyOnEdit: true },
     ],
   },
 };
@@ -564,6 +564,7 @@ function AdminResourceManager({ resource, user, onChanged, setError, setNotice }
   const [editing, setEditing] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [imageUploadsInProgress, setImageUploadsInProgress] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -629,10 +630,10 @@ function AdminResourceManager({ resource, user, onChanged, setError, setNotice }
     setError('');
     const payload = {};
     for (const field of config.fields) {
-      if (field.createOnly && editing) continue;
       const value = form[field.key];
       if (field.type === 'checkbox') payload[field.key] = Boolean(value);
       else if (value !== '' && value !== undefined) payload[field.key] = field.type === 'number' ? Number(value) : value;
+      else if (editing && !field.required && !field.keepEmptyOnEdit) payload[field.key] = null;
     }
     try {
       await send(editing ? `/admin/${resource}/${editing}` : `/admin/${resource}`, editing ? 'patch' : 'post', payload);
@@ -675,9 +676,10 @@ function AdminResourceManager({ resource, user, onChanged, setError, setNotice }
 
   return <section className="admin-panel admin-resource-panel">
     <div className="admin-panel-heading"><div><span className="eyebrow">{isAudit ? 'ADMINISTRATIVE HISTORY' : 'CONTENT MANAGEMENT'}</span><h2>{isAudit ? 'Audit log' : config.title}</h2></div>{!isAudit && <button className="button button-coral" onClick={startCreate}>Add {config.title.replace(/s$/, '')} <ArrowRight size={14} /></button>}</div>
-    {!isAudit && <form className="resource-form" onSubmit={save}><div className="resource-form-heading"><b>{editing ? `Edit ${config.title.replace(/s$/, '')}` : `New ${config.title.replace(/s$/, '')}`}</b>{Boolean(editing) && <button type="button" className="resource-cancel" onClick={() => { setEditing(''); setForm({}); }}>Cancel edit</button>}</div><div className="resource-fields">{config.fields.filter((field) => !field.createOnly || !editing).map((field) => {
+    {!isAudit && <form className="resource-form" onSubmit={save}><div className="resource-form-heading"><b>{editing ? `Edit ${config.title.replace(/s$/, '')}` : `New ${config.title.replace(/s$/, '')}`}</b>{Boolean(editing) && <button type="button" className="resource-cancel" onClick={() => { setEditing(''); setForm({}); }}>Cancel edit</button>}</div><div className="resource-fields">{config.fields.map((field) => {
       if (field.type === 'checkbox') return <label className="resource-checkbox" key={field.key}><input type="checkbox" checked={Boolean(form[field.key])} onChange={(event) => setForm({ ...form, [field.key]: event.target.checked })} />{field.label}</label>;
       if (field.type === 'textarea') return <label className="resource-field resource-field-wide" key={field.key}>{field.label}<textarea required={field.required} rows="3" value={form[field.key] || ''} onChange={(event) => setForm({ ...form, [field.key]: event.target.value })} /></label>;
+      if (field.type === 'image') return <ImageUploadField key={field.key} field={field} value={form[field.key] || ''} onChange={(url) => setForm((current) => ({ ...current, [field.key]: url }))} onUploadStateChange={(uploading) => setImageUploadsInProgress((count) => Math.max(0, count + (uploading ? 1 : -1)))} />;
       if (field.type === 'select' || field.type === 'relation') {
         let choices = field.type === 'select' ? field.options.map((value) => ({ id: value, name: value })) : lookups[field.source] || [];
         if (resource === 'matches' && ['homeTeam', 'awayTeam'].includes(field.key) && form.tournament) {
@@ -692,10 +694,95 @@ function AdminResourceManager({ resource, user, onChanged, setError, setNotice }
           setForm(nextForm);
         }}><option value="">Select…</option>{choices.map((choice) => <option key={recordId(choice) || choice.id} value={recordId(choice) || choice.id}>{choice.name || choice.email}</option>)}</select></label>;
       }
-      return <label className="resource-field" key={field.key}>{field.label}<input required={field.required} type={field.type || 'text'} min={field.min} max={field.max} value={form[field.key] || ''} onChange={(event) => setForm({ ...form, [field.key]: event.target.value })} /></label>;
-    })}</div><div className="resource-form-actions"><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create record'} <Check size={14} /></button><span>Changes are saved to the tournament database.</span></div></form>}
+      return <label className="resource-field" key={field.key}>{field.label}<input required={field.required && !(editing && field.type === 'password')} type={field.type || 'text'} min={field.min} max={field.max} placeholder={editing && field.type === 'password' ? 'Leave blank to keep current password' : undefined} autoComplete={field.type === 'password' ? 'new-password' : undefined} value={form[field.key] || ''} onChange={(event) => setForm({ ...form, [field.key]: event.target.value })} /></label>;
+    })}</div><div className="resource-form-actions"><button className="button button-dark" disabled={saving || imageUploadsInProgress > 0}>{saving ? 'Saving…' : imageUploadsInProgress ? 'Wait for image upload…' : editing ? 'Save changes' : 'Create record'} <Check size={14} /></button><span>Changes are saved to the tournament database.</span></div></form>}
     {loading ? <div className="admin-resource-loading"><span className="loader" /> Loading records…</div> : rows.length ? <div className="admin-resource-table-wrap"><table className="admin-resource-table"><thead><tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}{!isAudit && <th>ACTIONS</th>}</tr></thead><tbody>{rows.map((row) => <tr key={recordId(row)}>{columns.map((column) => <td key={column.key}>{column.key === 'createdAt' ? dateLabel(row.createdAt) : column.key === 'actor' ? (row.actor?.name || row.actor?.email || 'System') : relationLabel(row, column)}</td>)}{!isAudit && <td><div className="resource-actions"><button onClick={() => startEdit(row)}>Edit</button><button className="danger-action" onClick={() => remove(row)}>Delete</button></div></td>}</tr>)}</tbody></table></div> : <Empty title={isAudit ? 'No administrative activity yet' : `No ${config.title.toLowerCase()} yet`} text={isAudit ? 'Important administrative changes will be recorded here.' : 'Create your first record using the form above.'} />}
   </section>;
+}
+
+function ImageUploadField({ field, value, onChange, onUploadStateChange }) {
+  const [pendingFile, setPendingFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [previewReady, setPreviewReady] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!previewUrl) return undefined;
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
+
+  async function handleFileChange(event) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      setError('Choose a JPG, PNG, WebP, or GIF image.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image must be 5 MB or smaller.');
+      return;
+    }
+
+    setError('');
+    setProgress(0);
+    setPendingFile(file);
+    setPreviewReady(false);
+    setPreviewUrl(URL.createObjectURL(file));
+  }
+
+  async function handleUpload() {
+    if (!pendingFile || !previewReady) return;
+    setError('');
+    setUploading(true);
+    onUploadStateChange(true);
+    try {
+      const url = await uploadImage(pendingFile, setProgress);
+      onChange(url);
+      setPendingFile(null);
+      setPreviewReady(false);
+      setPreviewUrl('');
+    } catch (uploadError) {
+      setError(messageFromError(uploadError, 'Image upload failed. Please try again.'));
+    } finally {
+      setUploading(false);
+      onUploadStateChange(false);
+    }
+  }
+
+  return <div className="resource-field image-upload-field">
+    <span>{field.label}</span>
+    {(previewUrl || value) && <img
+      className="image-upload-preview"
+      src={previewUrl || value}
+      alt={`${field.label} preview`}
+      onLoad={() => { if (pendingFile) setPreviewReady(true); }}
+      onError={() => {
+        if (pendingFile) {
+          setPreviewReady(false);
+          setError('This image could not be previewed. Choose a valid image file.');
+        }
+      }}
+    />}
+    {pendingFile && <small className="image-preview-confirmation" role="status">Preview this image before uploading: {pendingFile.name}</small>}
+    <label className={`image-upload-button ${uploading ? 'image-upload-button-disabled' : ''}`}>
+      <Flag size={15} />{uploading ? 'Uploading from your device…' : pendingFile ? 'Choose another image' : value ? 'Choose a different image' : 'Choose an image from this device'}
+      <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={uploading} onChange={handleFileChange} />
+    </label>
+    <small>Select a photo or image stored on your computer or mobile device. JPG, PNG, WebP or GIF · up to 5 MB.</small>
+    {pendingFile && <div className="image-upload-actions">
+      <button type="button" className="button button-coral" disabled={uploading || !previewReady} onClick={handleUpload}>{uploading ? `Uploading… ${progress}%` : 'Upload this image'}</button>
+      <button type="button" className="resource-cancel" disabled={uploading} onClick={() => { setPendingFile(null); setPreviewReady(false); setPreviewUrl(''); setError(''); }}>Cancel selection</button>
+    </div>}
+    {uploading && <progress className="image-upload-progress" max="100" value={progress} aria-label={`Uploading ${field.label}`} />}
+    {uploading && <small role="status">Uploading image… {progress}%</small>}
+    {error && <small className="image-upload-error" role="alert">{error}</small>}
+  </div>;
 }
 
 function QuickResultForm({ matches, results, onSaved, setNotice, setError }) {

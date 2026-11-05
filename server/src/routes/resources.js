@@ -7,6 +7,8 @@ const recordAudit = require('../services/audit');
 const Result = require('../models/Result');
 const Match = require('../models/Match');
 const Team = require('../models/Team');
+const Tournament = require('../models/Tournament');
+const publicTournamentStatuses = ['published', 'completed'];
 
 const config = {
   tournaments: { model: require('../models/Tournament'), fields: ['name', 'edition', 'description', 'logoUrl', 'bannerUrl', 'venue', 'format', 'startDate', 'endDate', 'status'] },
@@ -72,14 +74,36 @@ function createResourceRouters() {
       : ['Super Admin', 'Admin'];
     publicRouter.get(`/${resource}`, asyncHandler(async (req, res) => {
       const { page, limit, skip } = pageOptions(req.query);
+      const publicTournamentIds = await Tournament.find({ status: { $in: publicTournamentStatuses } }).distinct('_id');
       const filter = {};
       if (resource === 'results') filter.status = 'published';
-      if (resource === 'tournaments') filter.status = { $in: ['published', 'completed'] };
-      if (resource === 'teams' || resource === 'sponsors') filter.active = true;
+      if (resource === 'tournaments') filter.status = { $in: publicTournamentStatuses };
+      if (resource === 'teams') {
+        filter.active = true;
+        filter.tournament = { $in: publicTournamentIds };
+      }
+      if (resource === 'matches' || resource === 'results') {
+        filter.tournament = { $in: publicTournamentIds };
+      }
+      if (resource === 'players') {
+        filter.active = true;
+        const publicTeams = await Team.find({ tournament: { $in: publicTournamentIds }, active: true }).distinct('_id');
+        filter.team = { $in: publicTeams };
+      }
+      if (resource === 'sponsors') {
+        filter.active = true;
+        filter.$or = [
+          { tournament: null },
+          { tournament: { $in: publicTournamentIds } }
+        ];
+      }
       if (req.query.tournamentId && ['teams', 'players', 'matches', 'results', 'sponsors'].includes(resource)) {
         if (!mongoose.isValidObjectId(req.query.tournamentId)) throw new ApiError(400, 'Invalid tournament identifier');
+        if (!publicTournamentIds.some((id) => String(id) === req.query.tournamentId)) {
+          return res.json({ data: [], pagination: { page, limit, total: 0, pages: 0 } });
+        }
         if (resource === 'players') {
-          const tournamentTeams = await Team.find({ tournament: req.query.tournamentId }).distinct('_id');
+          const tournamentTeams = await Team.find({ tournament: req.query.tournamentId, active: true }).distinct('_id');
           filter.team = { $in: tournamentTeams };
         } else if (resource === 'sponsors') {
           filter.$or = [{ tournament: req.query.tournamentId }, { tournament: null }];

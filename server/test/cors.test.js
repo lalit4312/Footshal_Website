@@ -54,3 +54,8 @@ test('does not allow unconfigured origins in production', async () => {
 
   assert.equal(response.status, 403);
 });
+
+test('trusts the production proxy hop but not forwarded headers in development', () => {
+  assert.equal(createApp(config).get('trust proxy'), false);
+  assert.equal(createApp({ ...config, nodeEnv: 'production' }).get('trust proxy'), 1);
+});

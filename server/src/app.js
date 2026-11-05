@@ -11,10 +11,12 @@ const errorHandler = require('./middleware/errorHandler');
 const createAuthRouter = require('./routes/auth');
 const createResourceRouters = require('./routes/resources');
 const createUsersRouter = require('./routes/users');
+const { createUploadsRouter } = require('./routes/uploads');
 const ApiError = require('./utils/ApiError');
 
 function createApp(config = loadEnv()) {
   const app = express();
+  app.set('trust proxy', config.nodeEnv === 'production' ? 1 : false);
   app.disable('x-powered-by');
   app.use(helmet());
   app.use(cors({
@@ -51,6 +53,7 @@ function createApp(config = loadEnv()) {
 
   const { publicRouter, adminRouter } = createResourceRouters();
   app.use('/api/public', publicRouter);
+  app.use('/api/admin/uploads', requireAuth(config), requireRoles('Super Admin', 'Admin'), createUploadsRouter(config.cloudinary));
   app.use('/api/admin', requireAuth(config), adminRouter);
   app.use('/api/admin/users', requireAuth(config), requireRoles('Super Admin'), createUsersRouter());
 

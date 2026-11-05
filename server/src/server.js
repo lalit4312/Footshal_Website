@@ -1,18 +1,53 @@
 require('dotenv').config();
+const mongoose = require('mongoose');
 const loadEnv = require('./config/env');
 const connectDatabase = require('./config/database');
 const createApp = require('./app');
 
+const config = loadEnv();
+const app = createApp(config);
+let databaseConnection;
+
+function ensureDatabaseConnection() {
+  if (mongoose.connection.readyState === 1) return Promise.resolve();
+  if (!databaseConnection) {
+    databaseConnection = connectDatabase(config.mongoUri).catch((error) => {
+      databaseConnection = null;
+      throw error;
+    });
+  }
+  return databaseConnection;
+}
+
+async function handler(req, res) {
+  try {
+    await ensureDatabaseConnection();
+    return app(req, res);
+  } catch (error) {
+    console.error('Unable to connect API database:', error.message);
+    if (!res.headersSent) {
+      res.status(503).json({ error: { message: 'Database unavailable' } });
+    }
+  }
+}
+
+module.exports = handler;
+
 async function start() {
-  const config = loadEnv();
-  await connectDatabase(config.mongoUri);
-  const app = createApp(config);
+  await ensureDatabaseConnection();
   const server = app.listen(config.port, () => {
     console.log(`Neco Futsal API listening on port ${config.port}`);
   });
+  server.on('error', (error) => {
+    console.error(`Unable to listen on port ${config.port}:`, error.message);
+    mongoose.disconnect().catch((disconnectError) => {
+      console.error('Unable to close database connection:', disconnectError.message);
+    }).finally(() => {
+      process.exitCode = 1;
+    });
+  });
 
   const shutdown = () => server.close(async () => {
-    const mongoose = require('mongoose');
     await mongoose.disconnect();
     process.exit(0);
   });
@@ -20,7 +55,9 @@ async function start() {
   process.on('SIGTERM', shutdown);
 }
 
-start().catch((error) => {
-  console.error('Unable to start API:', error.message);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  start().catch((error) => {
+    console.error('Unable to start API:', error.message);
+    process.exitCode = 1;
+  });
+}

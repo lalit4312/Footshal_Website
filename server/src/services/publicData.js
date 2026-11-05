@@ -2,8 +2,20 @@ const ApiError = require('../utils/ApiError');
 const calculateStandings = require('../utils/standings');
 const Result = require('../models/Result');
 const Team = require('../models/Team');
+const Tournament = require('../models/Tournament');
+
+const publicTournamentStatuses = ['published', 'completed'];
+
+async function requirePublicTournament(tournamentId) {
+  const tournament = await Tournament.exists({
+    _id: tournamentId,
+    status: { $in: publicTournamentStatuses }
+  });
+  if (!tournament) throw new ApiError(404, 'Tournament not found');
+}
 
 async function getStandings(tournamentId) {
+  await requirePublicTournament(tournamentId);
   const results = await Result.find({ tournament: tournamentId, status: 'published' })
     .populate('homeTeam', 'name shortName')
     .populate('awayTeam', 'name shortName')
@@ -28,6 +40,7 @@ async function getStandings(tournamentId) {
 }
 
 async function getStats(tournamentId) {
+  await requirePublicTournament(tournamentId);
   const results = await Result.find({ tournament: tournamentId, status: 'published' }).lean();
   const standings = await getStandings(tournamentId);
   return {
