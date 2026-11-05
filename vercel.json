@@ -21,9 +21,8 @@
     },
     {
       "src": "/(.*)",
-      "dest": "client/index.html"
+      "dest": "/index.html"
     }
   ]
 }
-
 
