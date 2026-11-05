@@ -17,9 +17,12 @@ async function postLogin(appConfig, origin) {
   const server = createApp(appConfig).listen(0);
   try {
     const { port } = server.address();
+    const requestOrigin = origin === 'same-origin'
+      ? `http://127.0.0.1:${port}`
+      : origin;
     return await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Origin: origin },
+      headers: { 'Content-Type': 'application/json', Origin: requestOrigin },
       body: '{}'
     });
   } finally {
@@ -53,6 +56,12 @@ test('does not allow unconfigured origins in production', async () => {
   const response = await postLogin({ ...config, nodeEnv: 'production' }, 'http://192.168.137.1:5174');
 
   assert.equal(response.status, 403);
+});
+
+test('allows same-origin production writes without a configured CORS origin', async () => {
+  const response = await postLogin({ ...config, nodeEnv: 'production', corsOrigins: [] }, 'same-origin');
+
+  assert.equal(response.status, 400);
 });
 
 test('trusts the production proxy hop but not forwarded headers in development', () => {

@@ -19,13 +19,13 @@ function createApp(config = loadEnv()) {
   app.set('trust proxy', config.nodeEnv === 'production' ? 1 : false);
   app.disable('x-powered-by');
   app.use(helmet());
-  app.use(cors({
+  app.use((req, res, next) => cors({
     origin(origin, callback) {
-      if (isAllowedOrigin(origin, config)) return callback(null, true);
+      if (isAllowedRequestOrigin(origin, req, config)) return callback(null, true);
       return callback(new ApiError(403, 'Origin is not allowed by CORS'));
     },
     credentials: true
-  }));
+  })(req, res, next));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
   app.use(rateLimit({
@@ -64,7 +64,7 @@ function createApp(config = loadEnv()) {
 
 function requireObjectBodyForWrites(req, res, next, config) {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
-    && req.headers.origin && !isAllowedOrigin(req.headers.origin, config)) {
+    && req.headers.origin && !isAllowedRequestOrigin(req.headers.origin, req, config)) {
     return next(new ApiError(403, 'Origin is not allowed to modify API data'));
   }
   if (['POST', 'PUT', 'PATCH'].includes(req.method)) return requireObjectBody(req, res, next);
@@ -74,6 +74,12 @@ function requireObjectBodyForWrites(req, res, next, config) {
 function isAllowedOrigin(origin, config) {
   if (!origin || config.corsOrigins.includes(origin)) return true;
   return config.nodeEnv !== 'production' && isLocalDevelopmentOrigin(origin);
+}
+
+function isAllowedRequestOrigin(origin, req, config) {
+  if (isAllowedOrigin(origin, config)) return true;
+  if (config.nodeEnv !== 'production' || !origin) return false;
+  return origin === `${req.protocol}://${req.get('host')}`;
 }
 
 function isLocalDevelopmentOrigin(origin) {

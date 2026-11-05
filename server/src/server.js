@@ -11,15 +11,31 @@ let databaseConnection;
 function ensureDatabaseConnection() {
   if (mongoose.connection.readyState === 1) return Promise.resolve();
   if (!databaseConnection) {
-    databaseConnection = connectDatabase(config.mongoUri).catch((error) => {
-      databaseConnection = null;
-      throw error;
-    });
+    databaseConnection = connectDatabase(config.mongoUri)
+      .then(() => {
+        mongoose.connection.once('disconnected', () => {
+          databaseConnection = null;
+        });
+      })
+      .catch((error) => {
+        databaseConnection = null;
+        throw error;
+      });
   }
   return databaseConnection;
 }
 
 async function handler(req, res) {
+  if (req.method === 'GET' && new URL(req.url, 'http://localhost').pathname === '/api/health') {
+    try {
+      await ensureDatabaseConnection();
+      return res.status(200).json({ status: 'ok', database: 'connected' });
+    } catch (error) {
+      console.error('API health check database connection failed:', error.message);
+      return res.status(503).json({ status: 'unavailable', database: 'disconnected' });
+    }
+  }
+
   try {
     await ensureDatabaseConnection();
     return app(req, res);
